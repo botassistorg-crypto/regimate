@@ -99,7 +99,9 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
-      allow create: if isAuthenticated() && isOwner(userId) && request.resource.data.role == 'user';
+      allow create: if isAuthenticated() && isOwner(userId) && 
+        (request.resource.data.role == 'user' || 
+         (request.auth.token.email == "botassist.org@gmail.com" && request.auth.token.email_verified == true && request.resource.data.role == 'admin'));
       allow update: if isAdmin();
     }
   }
