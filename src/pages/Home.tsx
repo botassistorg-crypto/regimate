@@ -63,7 +63,7 @@ export const Home = () => {
               transition={{ delay: 0.1 }}
               className="text-lg text-gray-400 max-w-xl mx-auto font-light leading-relaxed"
             >
-              The ultimate destination for premium digital assets, bespoke creative services, and elite automation solutions.
+              Curated digital excellence. Discover a world of premium assets, bespoke creative services, and sophisticated automation designed for the modern visionary.
             </motion.p>
 
             <motion.div 
