@@ -1,0 +1,7 @@
+{
+  "name": "Regimate",
+  "description": "Premium digital products and automation services marketplace with a secure admin panel and glassmorphism design.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
