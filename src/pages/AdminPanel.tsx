@@ -4,10 +4,10 @@ import { GlassCard, PageTransition } from '../components/UI';
 import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { toast } from 'sonner';
-import { LayoutDashboard, Package, List, Users, ShoppingBag, Plus, Trash2, Edit2, X, Globe, Upload, Loader2 } from 'lucide-react';
+import { LayoutDashboard, Package, List, Users, ShoppingBag, Plus, Trash2, Edit2, X, Globe, Upload, Loader2, LogIn, LogOut } from 'lucide-react';
 
 export const AdminPanel = () => {
-  const { t, userProfile, categories, products } = useApp();
+  const { t, user, userProfile, categories, products, loading, handleLogout } = useApp();
   const [activeTab, setActiveTab] = useState<'products' | 'categories' | 'visitors' | 'orders' | 'settings'>('products');
   const [visitors, setVisitors] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
@@ -15,6 +15,22 @@ export const AdminPanel = () => {
   const [formData, setFormData] = useState<any>({});
   const [sheetUrl, setSheetUrl] = useState(localStorage.getItem('regimate_sheet_url') || '');
   const [isUploading, setIsUploading] = useState(false);
+  const [confirmModal, setConfirmModal] = useState<{
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const handleLogin = async () => {
+    try {
+      const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
+      const { auth } = await import('../firebase');
+      await signInWithPopup(auth, new GoogleAuthProvider());
+      toast.success('Logged in successfully');
+    } catch (e) {
+      toast.error('Login failed');
+    }
+  };
 
   useEffect(() => {
     if (userProfile?.role !== 'admin') return;
@@ -74,23 +90,61 @@ export const AdminPanel = () => {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-32 space-y-4">
+        <Loader2 className="animate-spin text-white w-12 h-12" />
+        <p className="text-gray-400 animate-pulse uppercase tracking-[0.3em] text-[10px]">Initializing Secure Panel</p>
+      </div>
+    );
+  }
+
   if (userProfile?.role !== 'admin') {
     return (
-      <div className="text-center py-20 text-white">
-        <h2 className="text-4xl font-serif">Access Denied</h2>
-        <p className="mt-4 text-gray-400">Only administrators can access this panel.</p>
+      <div className="text-center py-32 space-y-8">
+        <div className="space-y-4">
+          <h2 className="text-5xl font-serif text-white tracking-tighter">Access Restricted</h2>
+          <p className="text-gray-500 max-w-md mx-auto font-light leading-relaxed">
+            This administrative interface is reserved for authorized personnel only. 
+            {user ? " Your account does not have administrative privileges." : " Please authenticate with an administrator account to proceed."}
+          </p>
+          {user && user.email !== 'botassist.org@gmail.com' && (
+            <p className="text-xs text-red-500/60 uppercase tracking-widest">
+              Logged in as: {user.email}
+            </p>
+          )}
+        </div>
+        {!user ? (
+          <button 
+            onClick={handleLogin}
+            className="inline-flex items-center gap-2 bg-white text-black px-8 py-4 rounded-full font-bold uppercase tracking-widest text-sm hover:bg-gray-200 transition-all"
+          >
+            <LogIn size={18} /> Authenticate as Admin
+          </button>
+        ) : user.email !== 'botassist.org@gmail.com' && (
+          <button 
+            onClick={handleLogout}
+            className="inline-flex items-center gap-2 border border-white/10 text-white px-8 py-4 rounded-full font-bold uppercase tracking-widest text-sm hover:bg-white/5 transition-all"
+          >
+            <LogOut size={18} /> Switch Account
+          </button>
+        )}
       </div>
     );
   }
 
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.name) {
+      toast.error('Product name is required');
+      return;
+    }
     try {
       const slug = formData.name.toLowerCase().replace(/ /g, '-').replace(/[^\w-]+/g, '');
       const data = {
         ...formData,
         slug,
-        price: Number(formData.price),
+        price: Number(formData.price || 0),
         updatedAt: new Date().toISOString()
       };
       if (formData.id) {
@@ -109,6 +163,10 @@ export const AdminPanel = () => {
 
   const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.name) {
+      toast.error('Category name is required');
+      return;
+    }
     try {
       const slug = formData.name.toLowerCase().replace(/ /g, '-').replace(/[^\w-]+/g, '');
       if (formData.id) {
@@ -190,11 +248,16 @@ export const AdminPanel = () => {
                             <Edit2 size={16}/>
                           </button>
                           <button 
-                            onClick={async () => {
-                              if(confirm('Delete product?')) {
-                                await deleteDoc(doc(db, 'products', p.id));
-                                toast.success('Product deleted');
-                              }
+                            onClick={() => {
+                              setConfirmModal({
+                                title: 'Delete Product',
+                                message: `Are you sure you want to delete "${p.name}"? This action cannot be undone.`,
+                                onConfirm: async () => {
+                                  await deleteDoc(doc(db, 'products', p.id));
+                                  toast.success('Product deleted');
+                                  setConfirmModal(null);
+                                }
+                              });
                             }}
                             className="text-red-400 hover:text-red-300"
                           >
@@ -255,11 +318,16 @@ export const AdminPanel = () => {
                         <Edit2 size={16}/>
                       </button>
                       <button 
-                        onClick={async () => {
-                          if(confirm('Delete category?')) {
-                            await deleteDoc(doc(db, 'categories', cat.id));
-                            toast.success('Category deleted');
-                          }
+                        onClick={() => {
+                          setConfirmModal({
+                            title: 'Delete Category',
+                            message: `Are you sure you want to delete "${cat.name}"? This action will not delete products in this category, but they will become uncategorized.`,
+                            onConfirm: async () => {
+                              await deleteDoc(doc(db, 'categories', cat.id));
+                              toast.success('Category deleted');
+                              setConfirmModal(null);
+                            }
+                          });
                         }}
                         className="text-red-400 hover:text-red-300"
                       >
@@ -387,6 +455,7 @@ export const AdminPanel = () => {
                   placeholder={t('name')}
                   required
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white"
+                  value={formData.name || ''}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 />
                 {activeTab === 'products' && (
@@ -395,12 +464,14 @@ export const AdminPanel = () => {
                       placeholder={t('description')}
                       required
                       className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white h-32"
+                      value={formData.description || ''}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     />
                     <input 
                       type="text" 
                       placeholder="Short Description"
                       className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white"
+                      value={formData.shortDescription || ''}
                       onChange={(e) => setFormData({ ...formData, shortDescription: e.target.value })}
                     />
                     <div className="grid grid-cols-2 gap-4">
@@ -409,12 +480,13 @@ export const AdminPanel = () => {
                         placeholder={t('price')}
                         required
                         className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white"
+                        value={formData.price || ''}
                         onChange={(e) => setFormData({ ...formData, price: e.target.value })}
                       />
                       <select 
                         className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white"
                         onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                        value={formData.type}
+                        value={formData.type || 'digital'}
                       >
                         <option value="digital">Digital</option>
                         <option value="service">Service</option>
@@ -426,12 +498,14 @@ export const AdminPanel = () => {
                         placeholder="Download URL (e.g. Google Drive link)"
                         required
                         className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white"
+                        value={formData.downloadUrl || ''}
                         onChange={(e) => setFormData({ ...formData, downloadUrl: e.target.value })}
                       />
                     )}
                     <select 
                       required
                       className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white"
+                      value={formData.categoryId || ''}
                       onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
                     >
                       <option value="">Select Category</option>
@@ -471,6 +545,31 @@ export const AdminPanel = () => {
                   {t('save')}
                 </button>
               </form>
+            </GlassCard>
+          </div>
+        )}
+        {/* Confirmation Modal */}
+        {confirmModal && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+            <GlassCard className="w-full max-w-md p-8 space-y-6 border-red-500/20">
+              <div className="space-y-2">
+                <h3 className="text-2xl font-serif text-white">{confirmModal.title}</h3>
+                <p className="text-gray-400 font-light leading-relaxed">{confirmModal.message}</p>
+              </div>
+              <div className="flex gap-4">
+                <button 
+                  onClick={() => setConfirmModal(null)}
+                  className="flex-1 px-6 py-3 rounded-lg border border-white/10 text-white hover:bg-white/5 transition-colors uppercase tracking-widest text-xs font-bold"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={confirmModal.onConfirm}
+                  className="flex-1 px-6 py-3 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors uppercase tracking-widest text-xs font-bold"
+                >
+                  Confirm
+                </button>
+              </div>
             </GlassCard>
           </div>
         )}
