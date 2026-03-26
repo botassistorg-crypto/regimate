@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
-import { collection, onSnapshot, doc, getDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Language, translations, Category, Product, UserProfile } from '../types';
 
@@ -13,6 +13,7 @@ interface AppContextType {
   products: Product[];
   t: (key: keyof typeof translations['en']) => string;
   loading: boolean;
+  handleLogout: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -25,6 +26,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const handleLogout = async () => {
+    const { signOut } = await import('firebase/auth');
+    await signOut(auth);
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
@@ -35,7 +41,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setUserProfile({ uid: u.uid, ...docSnap.data() } as UserProfile);
         } else {
           const role = u.email === 'botassist.org@gmail.com' ? 'admin' : 'user';
-          setUserProfile({ uid: u.uid, email: u.email!, role, displayName: u.displayName || '' } as UserProfile);
+          const newProfile = { 
+            uid: u.uid, 
+            email: u.email!, 
+            role, 
+            displayName: u.displayName || '',
+            createdAt: new Date().toISOString()
+          };
+          try {
+            await setDoc(docRef, newProfile);
+            setUserProfile(newProfile as UserProfile);
+          } catch (e) {
+            console.error("Error creating user profile:", e);
+            // Fallback to state-only if Firestore write fails (e.g. rules)
+            setUserProfile(newProfile as UserProfile);
+          }
         }
       } else {
         setUserProfile(null);
@@ -63,7 +83,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   return (
-    <AppContext.Provider value={{ language, setLanguage, user, userProfile, categories, products, t, loading }}>
+    <AppContext.Provider value={{ language, setLanguage, user, userProfile, categories, products, t, loading, handleLogout }}>
       {children}
     </AppContext.Provider>
   );
